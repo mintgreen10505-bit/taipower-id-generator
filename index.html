@@ -4,12 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>台電出入証產生器</title>
+    <!-- 載入 React 與 ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- 鎖定 Babel 穩定版本，避免最新版造成意外錯誤 -->
     <script src="https://unpkg.com/@babel/standalone@7.23.6/babel.min.js"></script>
+    <!-- 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 PDF 工具庫 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- 載入真實的 QR Code 生成庫 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     
     <style>
@@ -20,6 +25,7 @@
         @media print {
             .no-print { display: none !important; }
         }
+        /* 保證 html2canvas 渲染字體一致性：優先使用標楷體、新細明體，以符合正式公文風格 */
         .id-card-render {
             font-family: "BiauKai", "DFKai-SB", "Times New Roman", "PMingLiU", "MingLiU", "Microsoft JhengHei", serif !important;
         }
@@ -28,12 +34,15 @@
 <body class="bg-slate-100 text-slate-800">
     <div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect } = React;
+    <!-- 加入 data-type="module" 解決 Babel 在部分環境下插入腳本的模組報錯問題 -->
+    <script type="text/babel" data-type="module">
+        const { useState, useEffect, useRef } = React;
 
+        // --- 預設的台電 Logo Base64 ---
         const rawSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47" fill="none" stroke="#0067B0" stroke-width="2.8"/><circle cx="50" cy="50" r="41.5" fill="none" stroke="#0067B0" stroke-width="2.8"/><circle cx="50" cy="50" r="36" fill="none" stroke="#0067B0" stroke-width="2.8"/><g fill="#E60012"><path d="M42 34 L32 16 L22 34 L32 34 Z" transform="rotate(-6 42 34)"/><path d="M58 34 L68 16 L78 34 L68 34 Z" transform="rotate(6 58 34)"/><path d="M42 66 L32 84 L22 66 L32 66 Z" transform="rotate(6 42 66)"/><path d="M58 66 L68 84 L78 66 L68 66 Z" transform="rotate(-6 58 66)"/></g><g fill="none" stroke="#0067B0" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M50 24 L42 38 L58 38 Z" stroke-width="2.5"/><rect x="42.5" y="41" width="15" height="7.5"/><path d="M38 52 H62 M38 60 H62 M38 68 H62 M50 52 V78"/><path d="M50 78 L53 84" stroke-width="4"/></g></svg>`;
         const DEFAULT_LOGO = "data:image/svg+xml;base64," + btoa(rawSvg);
 
+        // --- 圖示組件 ---
         const Icon = ({ d, size = 24, className = "" }) => (
             <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
                 <path d={d} />
@@ -50,6 +59,7 @@
         const AlertCircleIcon = (props) => <Icon d="M12 8v4 M12 16h.01 M22 12A10 10 0 1 1 2 12a10 10 0 0 1 20 0z" {...props} />;
         const ImageIcon = (props) => <Icon d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z M21 15l-5-5L5 21 M10 8h.01" {...props} />;
 
+        // --- 真實 QR Code 生成組件 ---
         const RealQRCode = ({ text }) => {
             const [qrSrc, setQrSrc] = useState('');
             useEffect(() => {
@@ -62,6 +72,7 @@
                     setQrSrc(qr.toDataURL());
                 }
             }, [text]);
+
             return (
                 <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {qrSrc ? <img src={qrSrc} style={{ width: '44px', height: '44px', display: 'block' }} alt="QR Code" /> : null}
@@ -69,18 +80,27 @@
             );
         };
 
+        // --- 主要應用程式 ---
         const App = () => {
             const createEmptyCard = () => ({
-                id: '', name: '', bloodType: 'O', photo: null, contractor: '', 
+                id: '', 
+                name: '',
+                bloodType: 'O',
+                photo: null,
+                contractor: '', 
                 project: '通霄電廠第二期更新改建計畫新161kV開關場統包工程',
-                expiryDate: '2026-12-31', uuid: Math.random().toString(36).substring(7)
+                expiryDate: '2026-12-31',
+                uuid: crypto.randomUUID()
             });
 
             const [mode, setMode] = useState('batch'); 
             const [cards, setCards] = useState(Array.from({ length: 8 }, () => createEmptyCard()));
             const [singleCard, setSingleCard] = useState(createEmptyCard());
             const [isProcessing, setIsProcessing] = useState(false);
-            const [customLogo, setCustomLogo] = useState(DEFAULT_LOGO);
+            
+            const [customLogo, setCustomLogo] = useState(() => {
+                return localStorage.getItem('taipower_custom_logo') || DEFAULT_LOGO;
+            });
 
             const formatDate = (dateStr) => {
                 if (!dateStr) return "";
@@ -108,62 +128,153 @@
                 }
             };
 
+            const handleLogoUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64data = reader.result;
+                        setCustomLogo(base64data);
+                        localStorage.setItem('taipower_custom_logo', base64data); 
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
             const generatePDF = async () => {
                 const validCards = (mode === 'batch' ? cards : [singleCard]).filter(c => c.name.trim() !== "" || c.photo !== null);
-                if (validCards.length === 0) { alert("請填寫姓名或上傳照片再進行匯出"); return; }
+                if (validCards.length === 0) {
+                    alert("請填寫姓名或上傳照片再進行匯出");
+                    return;
+                }
+
                 setIsProcessing(true);
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF('p', 'mm', 'a4');
+                
+                const cardW = 90;
+                const cardH = 55;
+                const marginX = 10;
+                const marginY = 15;
+                const gapX = 10;
+                const gapY = 10;
+
                 for (let i = 0; i < validCards.length; i++) {
                     const card = validCards[i];
                     const element = document.getElementById(`print-ref-${card.uuid}`);
-                    const canvas = await html2canvas(element, { scale: 4, useCORS: true, backgroundColor: '#ffffff' });
+                    if (!element) continue;
+
+                    const canvas = await html2canvas(element, { 
+                        scale: 4, 
+                        useCORS: true, 
+                        logging: false, 
+                        backgroundColor: '#ffffff',
+                        allowTaint: true 
+                    });
+                    
                     const imgData = canvas.toDataURL('image/jpeg', 1.0);
                     const pageIdx = i % 8;
                     const col = pageIdx % 2;
                     const row = Math.floor(pageIdx / 2);
+                    
                     if (i > 0 && pageIdx === 0) doc.addPage();
-                    doc.addImage(imgData, 'JPEG', 10 + (col * 100), 15 + (row * 65), 90, 55);
+                    const x = marginX + (col * (cardW + gapX));
+                    const y = marginY + (row * (cardH + gapY));
+                    doc.addImage(imgData, 'JPEG', x, y, cardW, cardH);
                 }
-                doc.save(`台電出入証_${new Date().getTime()}.pdf`);
+
+                doc.save(`台電出入証產生器_匯出_${new Date().getTime()}.pdf`);
                 setIsProcessing(false);
             };
 
+            // --- 終極排版版：加高格子、縮小字體、鎖死行高、強迫推升 ---
             const IDCard = ({ data, domId, logoSrc }) => (
-                <div id={domId} className="id-card-render shrink-0" style={{ width: '340px', height: '236px', border: '2px solid black', backgroundColor: 'white', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
-                    <div style={{ width: '100%', height: '52px', borderBottom: '1.5px solid black', display: 'flex' }}>
+                <div 
+                    id={domId} 
+                    className="id-card-render shrink-0" 
+                    style={{ 
+                        width: '340px',   
+                        height: '236px', // 拉高整體卡片高度，給予表格更多垂直空間
+                        border: '2px solid black', 
+                        backgroundColor: 'white', 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        boxSizing: 'border-box',
+                        color: 'black'
+                    }}
+                >
+                    {/* 1. 頂部標題區 */}
+                    <div style={{ width: '100%', height: '52px', borderBottom: '1.5px solid black', display: 'flex', boxSizing: 'border-box' }}>
                         <div style={{ width: '52px', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <img src={logoSrc} style={{ width: '42px', height: '42px' }} alt="LOGO" />
+                            <img src={logoSrc} style={{ width: '42px', height: '42px', display: 'block', objectFit: 'contain' }} alt="LOGO" />
                         </div>
-                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <span style={{ fontSize: '15px', fontWeight: 'bold' }}>台灣電力公司綜合施工處工作證</span>
+                        <div style={{ flex: 1, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingBottom: '4px' }}>
+                            {/* 強制 lineHeight: 1，避免字體自帶空白 */}
+                            <span style={{ fontSize: '15px', fontWeight: 'bold', whiteSpace: 'nowrap', lineHeight: 1 }}>
+                                台灣電力公司綜合施工處工作證
+                            </span>
                         </div>
-                        <div style={{ width: '52px', height: '100%', borderLeft: '1.5px solid black' }}>
+                        <div style={{ width: '52px', height: '100%', borderLeft: '1.5px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <RealQRCode text={data.id} />
                         </div>
                     </div>
-                    {/* (其他排版邏輯與您原本的一致) */}
-                    <div style={{ width: '100%', height: '26px', borderBottom: '1.5px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 'bold', padding: '0 24px' }}>
+
+                    {/* 2. 承商人員工作證副標題 */}
+                    {/* 加強 padding-bottom 推升力道 */}
+                    <div style={{ width: '100%', height: '26px', borderBottom: '1.5px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', padding: '0 24px 6px 24px' }}>
+                        {/* 字體微調縮小至 14px，加入 lineHeight: 1 */}
+                        <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: 'bold', lineHeight: 1 }}>
                             {['承', '商', '人', '員', '工', '作', '證'].map((char, idx) => <span key={idx}>{char}</span>)}
                         </div>
                     </div>
-                    <div style={{ width: '100%', height: '25px', borderBottom: '1.5px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 'bold' }}>{data.project}</span>
+
+                    {/* 3. 工程名稱 */}
+                    <div style={{ width: '100%', height: '25px', borderBottom: '1.5px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', padding: '0 6px 6px 6px' }}>
+                        <span style={{ width: '100%', textAlign: 'center', whiteSpace: 'nowrap', fontSize: '11px', fontWeight: 'bold', lineHeight: 1 }}>
+                            {data.project}
+                        </span>
                     </div>
-                    <div style={{ width: '100%', flex: 1, display: 'flex' }}>
-                        <div style={{ width: '85px', borderRight: '1.5px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {data.photo ? <img src={data.photo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <UserIcon size={55} style={{ color: '#e2e8f0' }} />}
+
+                    {/* 4. 照片與表格內容區 (現在格子變更高了) */}
+                    <div style={{ width: '100%', flex: 1, display: 'flex', boxSizing: 'border-box' }}>
+                        {/* 左側照片區 */}
+                        <div style={{ width: '85px', height: '100%', borderRight: '1.5px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', backgroundColor: 'white', overflow: 'hidden' }}>
+                            {data.photo ? 
+                                <img src={data.photo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="照片" /> : 
+                                <UserIcon size={55} style={{ color: '#e2e8f0' }} />
+                            }
                         </div>
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                            {[ { label: ["編", "號"], value: data.id }, { label: ["承", "商"], value: data.contractor }, { label: ["姓", "名"], value: data.name }, { label: ["血", "型"], value: data.bloodType }, { label: ["期", "限"], value: formatDate(data.expiryDate) } ].map((row, i) => (
-                                <div key={i} style={{ flex: 1, display: 'flex', borderBottom: i !== 4 ? '1.5px solid black' : 'none' }}>
-                                    <div style={{ width: '64px', borderRight: '1.5px solid black', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 'bold' }}>
-                                        {row.label[0]} {row.label[1]}
+
+                        {/* 右側表格區 */}
+                        <div style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+                            {[
+                                { label: ["編", "號"], value: data.id },
+                                { label: ["承", "商"], value: data.contractor },
+                                { label: ["姓", "名"], value: data.name },
+                                { label: ["血", "型"], value: data.bloodType },
+                                { label: ["期", "限"], value: formatDate(data.expiryDate) }
+                            ].map((row, i) => (
+                                <div key={i} style={{ flex: 1, display: 'flex', borderBottom: i !== 4 ? '1.5px solid black' : 'none', boxSizing: 'border-box' }}>
+                                    
+                                    {/* 標籤欄 (標題) */}
+                                    <div style={{ width: '64px', height: '100%', borderRight: '1.5px solid black', backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', paddingBottom: '6px' }}>
+                                        {/* 表格字體縮小為 13px，鎖死 lineHeight: 1 */}
+                                        <div style={{ width: '100%', display: 'flex', justifyContent: 'space-around', padding: '0 8px', fontSize: '13px', fontWeight: 'bold', lineHeight: 1 }}>
+                                            <span>{row.label[0]}</span>
+                                            <span>{row.label[1]}</span>
+                                        </div>
                                     </div>
-                                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 'bold' }}>
-                                        {row.value}
+                                    
+                                    {/* 數值欄 (內容) */}
+                                    {/* 底部加上 6px 內距，物理推升字體遠離底線 */}
+                                    <div style={{ flex: 1, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', padding: '0 4px 6px 4px' }}>
+                                        <span style={{ fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', lineHeight: 1 }}>
+                                            {row.value}
+                                        </span>
                                     </div>
+                                    
                                 </div>
                             ))}
                         </div>
@@ -171,14 +282,106 @@
                 </div>
             );
 
+            const activeCards = mode === 'batch' ? cards : [singleCard];
+
             return (
-                <div className="p-8">
-                    <button onClick={generatePDF} className="bg-blue-600 text-white p-4 rounded-xl mb-4">產生 PDF</button>
-                    <div className="flex flex-wrap gap-4">
-                        {(mode === 'batch' ? cards : [singleCard]).map((card, idx) => (
-                            <IDCard key={card.uuid} data={card} domId={`print-ref-${card.uuid}`} logoSrc={customLogo} />
-                        ))}
+                <div className="min-h-screen p-4 md:p-8">
+                    <div className="max-w-6xl mx-auto mb-8 no-print">
+                        <div className="bg-white rounded-3xl shadow-xl p-8 border border-slate-200">
+                            <div className="flex flex-col lg:flex-row justify-between items-center gap-8">
+                                <div>
+                                    <h1 className="text-3xl font-black text-slate-800 flex items-center gap-4">
+                                        <FileTextIcon className="text-blue-600" size={32} /> 台電出入証產生器
+                                    </h1>
+                                    <div className="flex flex-wrap items-center gap-3 mt-3">
+                                        <p className="text-slate-500 font-medium">9x5.5cm 標準規格 | 字體縮小、格子拉高完美版</p>
+                                        
+                                        <div className="flex bg-blue-50 rounded-lg p-1 border border-blue-100">
+                                            <button onClick={() => document.getElementById('logo-upload').click()} className="text-[12px] font-bold text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded transition-colors flex items-center gap-1.5">
+                                                <ImageIcon size={14} /> 更換官方 Logo
+                                            </button>
+                                            {customLogo !== DEFAULT_LOGO && (
+                                                <button onClick={() => { setCustomLogo(DEFAULT_LOGO); localStorage.removeItem('taipower_custom_logo'); }} className="text-[12px] font-bold text-slate-500 hover:text-red-500 hover:bg-red-50 px-3 py-1.5 rounded transition-colors flex items-center gap-1.5 border-l border-blue-100">
+                                                    <RefreshCwIcon size={14} /> 恢復預設
+                                                </button>
+                                            )}
+                                        </div>
+                                        <input id="logo-upload" type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-4">
+                                    <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+                                        <button onClick={() => setMode('single')} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${mode === 'single' ? 'bg-white shadow-lg text-blue-600' : 'text-slate-500'}`}><SquareIcon size={16} /> 單張</button>
+                                        <button onClick={() => setMode('batch')} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${mode === 'batch' ? 'bg-white shadow-lg text-blue-600' : 'text-slate-500'}`}><LayoutGridIcon size={16} /> 批次</button>
+                                    </div>
+                                    <button onClick={generatePDF} disabled={isProcessing} className="flex items-center gap-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white px-8 py-4 rounded-2xl font-black shadow-xl transition-all hover:scale-105 active:scale-95">
+                                        {isProcessing ? <RefreshCwIcon className="animate-spin" size={24} /> : <FileDownIcon size={24} />} 產生 PDF 檔
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
+
+                    <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10 no-print">
+                        <div className={`grid gap-5 ${mode === 'batch' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+                            {activeCards.map((card, idx) => (
+                                <div key={card.uuid} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 hover:border-blue-400 transition-all">
+                                    <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-100">
+                                        <h3 className="font-black text-slate-700 flex items-center gap-2"><CheckCircleIcon size={20} className={card.name ? "text-green-500" : "text-slate-300"} /> 編輯証件 #{idx + 1}</h3>
+                                        {!card.name && <span className="text-[10px] bg-orange-50 text-orange-600 px-2 py-1 rounded-full font-bold flex items-center gap-1"><AlertCircleIcon size={10} /> 未輸入姓名</span>}
+                                    </div>
+                                    <div className="space-y-5">
+                                        <div className="flex gap-4">
+                                            <div onClick={() => document.getElementById(`upload-${idx}`).click()} className="w-24 h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center cursor-pointer overflow-hidden hover:border-blue-300 transition-all shrink-0">
+                                                {card.photo ? <img src={card.photo} className="w-full h-full object-cover" /> : <><UploadIcon size={28} className="text-slate-300 mb-2" /><span className="text-[10px] text-slate-400 font-black">照片</span></>}
+                                                <input id={`upload-${idx}`} type="file" className="hidden" accept="image/*" onChange={(e) => handlePhotoUpload(mode === 'batch' ? idx : 0, e)} />
+                                            </div>
+                                            <div className="flex-1 space-y-3">
+                                                <input type="text" placeholder="姓名" value={card.name} onChange={(e) => updateCardData(idx, 'name', e.target.value)} className="w-full p-2.5 border rounded-xl font-bold outline-none" />
+                                                <input type="text" placeholder="証件編號" value={card.id} onChange={(e) => updateCardData(idx, 'id', e.target.value)} className="w-full p-2.5 border rounded-xl font-bold outline-none" />
+                                                <select value={card.bloodType} onChange={(e) => updateCardData(idx, 'bloodType', e.target.value)} className="w-full p-2.5 border rounded-xl font-bold bg-white outline-none cursor-pointer">
+                                                    <option value="O">O 型</option><option value="A">A 型</option><option value="B">B 型</option><option value="AB">AB 型</option><option value="RH">RH 型</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="pt-2 space-y-3 border-t border-slate-50">
+                                            <input type="text" placeholder="承商名稱" value={card.contractor} onChange={(e) => updateCardData(idx, 'contractor', e.target.value)} className="w-full p-2.5 border rounded-xl text-sm font-bold" />
+                                            <input type="text" placeholder="工程項目" value={card.project} onChange={(e) => updateCardData(idx, 'project', e.target.value)} className="w-full p-2.5 border rounded-xl text-sm font-bold" />
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xs text-slate-500 font-black shrink-0">有效期限:</span>
+                                                <input type="date" value={card.expiryDate} onChange={(e) => updateCardData(idx, 'expiryDate', e.target.value)} className="flex-1 p-2.5 border rounded-xl text-sm font-bold cursor-pointer" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="sticky top-8 space-y-6">
+                            <div className="bg-slate-900 p-5 rounded-t-3xl text-white font-black flex items-center justify-between shadow-2xl">
+                                <span className="flex items-center gap-2"><LayoutGridIcon size={18} /> 即時預覽區域</span>
+                                <span className="text-[11px] text-blue-400 bg-blue-400/10 px-3 py-1 rounded-full">高保真渲染模式</span>
+                            </div>
+                            <div className="bg-slate-200 p-8 rounded-b-3xl shadow-inner flex flex-col items-center gap-10 overflow-auto max-h-[75vh] border-x border-b border-slate-300">
+                                {activeCards.map((card, idx) => (
+                                    <div key={`preview-${card.uuid}`} className={`bg-white shadow-[0_15px_30px_rgba(0,0,0,0.2)] transition-all ${!card.name && !card.photo ? 'opacity-40 grayscale' : 'opacity-100'}`}>
+                                        <IDCard data={card} domId={`print-ref-${card.uuid}`} logoSrc={customLogo} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {isProcessing && (
+                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex flex-col items-center justify-center z-50 no-print">
+                            <div className="bg-white p-12 rounded-[2.5rem] flex flex-col items-center gap-8 shadow-2xl">
+                                <RefreshCwIcon className="animate-spin text-blue-600" size={64} />
+                                <div className="text-center">
+                                    <p className="font-black text-2xl text-slate-800">正在處理高品質 PDF...</p>
+                                    <p className="text-slate-500 mt-2">請稍候，確保影像無損輸出中</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
